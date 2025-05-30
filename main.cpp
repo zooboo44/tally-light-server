@@ -1,14 +1,13 @@
-//
-//  main.cpp
-//  tally-light-server
-//
-//  Created by CCPV on 5/22/25.
-//
-
 #include <iostream>
+#include "AtemConnectionManager.h"
 
 int main(int argc, const char * argv[]) {
-    // insert code here...
-    std::cout << "Hello, World!\n";
+    //const char* ip = "192.168.1.168";
+    std::cout << "argv[1]: " << argv[1] << std::endl;
+    AtemConnectionManager* connManager = new AtemConnectionManager(argv[1]);
+    while(true){
+        
+    }
+>>>>>>> 2d60127 (implement base atem connection manager functions)
     return 0;
 }
