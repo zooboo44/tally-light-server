@@ -20,6 +20,10 @@ AtemConnectionManager::AtemConnectionManager(const char* ipAddress, MqttConnecti
     AtemInputCallback *callback = new AtemInputCallback(this);
     m_mixBlock->AddCallback(callback);
     
+    IBMDSwitcherInput *input = nullptr;
+    IBMDSwitcherInputIterator* inputIterator = nullptr;
+    m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&inputIterator);
+    bool *inputIsTallied = new bool;
     switcherDiscovery->Release();
     mixEffectIterator->Release();
 }
@@ -47,32 +51,35 @@ ULONG STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Release(){
 }
 
 HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Notify(BMDSwitcherMixEffectBlockEventType eventType){
-    if(eventType == bmdSwitcherMixEffectBlockEventTypeTransitionPositionChanged){
-        logProgramInput();
+    if(eventType == bmdSwitcherMixEffectBlockEventTypeProgramInputChanged){
+        while(parentManager->m_inputIterator->Next(&parentManager->m_input) == S_OK){
+            if(parentManager->m_input->ista)
+        }
+        std::cout << "Program input changed" << std::endl;
     }
     return S_OK;
 }
 
 void AtemConnectionManager::AtemInputCallback::logProgramInput(){
-    IBMDSwitcherInput *input = nullptr;
-    IBMDSwitcherInputIterator* inputIterator = nullptr;
-    parentManager->m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&inputIterator);
+    parentManager->m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&parentManager->m_inputIterator);
     bool *inputIsTallied = new bool;
     
     std::cout << "Tallied: " << std::endl;
-    while(inputIterator->Next(&input) == S_OK){
-        if(input->IsProgramTallied(inputIsTallied) == S_OK && *inputIsTallied == true){
+    while(parentManager->m_inputIterator->Next(&parentManager->m_input) == S_OK){
+        if(parentManager->m_input->IsProgramTallied(inputIsTallied) == S_OK && *inputIsTallied == true){
             CFStringRef longName = nullptr;
-            input->GetLongName(&longName);
+            parentManager->m_input->GetLongName(&longName);
             char nameBuffer[256];
             CFStringGetCString(longName, nameBuffer, sizeof(nameBuffer), kCFStringEncodingUTF8);
             std::cout << nameBuffer << std::endl;
             CFRelease(longName);
         }
     }
+    std::cout << "\n";
+    //send command to lights
     
-    input->Release();
-    inputIterator->Release();
+    parentManager->m_input->Release();
+    
     delete(inputIsTallied);
     
 }
