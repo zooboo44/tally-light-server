@@ -87,11 +87,11 @@ std::string AtemConnectionManager::getLongName(IBMDSwitcherInput *input){
 }
 
 HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Notify(BMDSwitcherMixEffectBlockEventType eventType){
+    IBMDSwitcherInput *input = nullptr;
+    IBMDSwitcherInputIterator *inputIterator = nullptr;
+    m_parentManager->m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&inputIterator);
+    bool inputIsTallied;
     if(eventType == bmdSwitcherMixEffectBlockEventTypeProgramInputChanged){
-        IBMDSwitcherInput *input = nullptr;
-        IBMDSwitcherInputIterator *inputIterator = nullptr;
-        m_parentManager->m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&inputIterator);
-        bool inputIsTallied;
         //BMDSwitcherInputId inputId;
         //ask brian about derefrence nullptr if inputID* = nullptr; later in code I GetInputId(inputId) and it didnt work
         
@@ -106,14 +106,28 @@ HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Notify(BMDSw
                 m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "off";
             }
         }
-        
-        std::cout << "\n\nIterate through map" << std::endl;
-        for(const auto& pair : m_parentManager->m_currentProgram){
-            std::cout << pair.first << " " << pair.second << std::endl;
-        }
-        
-        input->Release();
-        inputIterator->Release();
     }
+    
+    if(eventType == bmdSwitcherMixEffectBlockEventTypeInTransitionChanged){
+        while(inputIterator->Next(&input) == S_OK){
+            input->IsProgramTallied(&inputIsTallied);
+            if(inputIsTallied == true){
+                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "program");
+                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "program";
+            }
+            else{
+                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "off");
+                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "off";
+            }
+        }
+    }
+    
+    std::cout << "\n\nIterate through map" << std::endl;
+    for(const auto& pair : m_parentManager->m_currentProgram){
+        std::cout << pair.first << " " << pair.second << std::endl;
+    }
+    
+    //input->Release();
+    inputIterator->Release();
     return S_OK;
 }
