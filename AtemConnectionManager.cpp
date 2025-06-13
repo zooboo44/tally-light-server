@@ -29,12 +29,18 @@ AtemConnectionManager::AtemConnectionManager(const char* ipAddress, MqttConnecti
     IBMDSwitcherInput *input = nullptr;
     m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&inputIterator);
     bool *inputIsTallied = new bool;
+    bool *inputIsPreviewed = new bool;
     std::cout << "\nInitialize Map:" << std::endl;
     while(inputIterator->Next(&input) == S_OK){
         input->IsProgramTallied(inputIsTallied);
-        if(*inputIsTallied == true){
+        input->IsPreviewTallied(inputIsPreviewed);
+        if(*inputIsTallied){
             std::cout << getLongName(input) << " " << "program" << std::endl;
             m_currentProgram[getLongName(input)] = "program";
+        }
+        if(*inputIsPreviewed){
+            std::cout << getLongName(input) << " " << "preview" << std::endl;
+            m_currentProgram[getLongName(input)] = "preview";
         }
         else{
             std::cout << getLongName(input) << " " << "off" << std::endl;
@@ -114,6 +120,20 @@ HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Notify(BMDSw
             if(inputIsTallied == true){
                 m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "program");
                 m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "program";
+            }
+            else{
+                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "off");
+                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "off";
+            }
+        }
+    }
+    
+    if(eventType == bmdSwitcherMixEffectBlockEventTypePreviewInputChanged){
+        while(inputIterator->Next(&input) == S_OK){
+            input->IsPreviewTallied(&inputIsTallied);
+            if(inputIsTallied == true){
+                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "preview");
+                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "preview";
             }
             else{
                 m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "off");
