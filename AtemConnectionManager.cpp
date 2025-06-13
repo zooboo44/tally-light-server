@@ -1,6 +1,7 @@
 #include "AtemConnectionManager.h"
 
 AtemConnectionManager::AtemConnectionManager(const char* ipAddress, MqttConnectionManager* mqtt):m_mqttClient(mqtt){
+    //connect to mqtt
     m_mqttClient->connect();
     IBMDSwitcherDiscovery* switcherDiscovery = CreateBMDSwitcherDiscoveryInstance();
     BMDSwitcherConnectToFailure connectionFailureReason;
@@ -13,22 +14,48 @@ AtemConnectionManager::AtemConnectionManager(const char* ipAddress, MqttConnecti
     CFRelease(ipAddressString);
     std::cout << "Connection succeded!!!!" << std::endl;
     
+    
+    //connect to atem
     IBMDSwitcherMixEffectBlockIterator *mixEffectIterator = nullptr;
     m_switcher->CreateIterator(IID_IBMDSwitcherMixEffectBlockIterator, (void**)&mixEffectIterator);
     mixEffectIterator->Next(&m_mixBlock);
     
+    //create callback
     AtemInputCallback *callback = new AtemInputCallback(this);
     m_mixBlock->AddCallback(callback);
     
+    //generate map of inputIDs
+    IBMDSwitcherInputIterator *inputIterator = nullptr;
     IBMDSwitcherInput *input = nullptr;
-    IBMDSwitcherInputIterator* inputIterator = nullptr;
     m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&inputIterator);
     bool *inputIsTallied = new bool;
+    std::cout << "\nInitialize Map:" << std::endl;
+    while(inputIterator->Next(&input) == S_OK){
+        input->IsProgramTallied(inputIsTallied);
+        if(*inputIsTallied == true){
+            std::cout << getLongName(input) << " " << "program" << std::endl;
+            m_currentProgram[getLongName(input)] = "program";
+        }
+        else{
+            std::cout << getLongName(input) << " " << "off" << std::endl;
+            m_currentProgram[getLongName(input)] = "off";
+        }
+    }
+    
+    std::cout << "\n\n\nPrint initialized map:\n";
+    for(const auto& pair : m_currentProgram){
+        std::cout << pair.first << " " << pair.second << std::endl;
+    }
+    
+    //clean up
     switcherDiscovery->Release();
     mixEffectIterator->Release();
+    inputIterator->Release();
+    input->Release();
+    delete(inputIsTallied);
 }
 
-AtemConnectionManager::AtemInputCallback::AtemInputCallback(AtemConnectionManager* parent):parentManager(parent){}
+AtemConnectionManager::AtemInputCallback::AtemInputCallback(AtemConnectionManager* parent):m_parentManager(parent){}
 
 HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::QueryInterface(REFIID iid, LPVOID *ppv){
     if (memcmp(&iid, &IID_IBMDSwitcherMixEffectBlockCallback, sizeof(CFUUIDBytes)) == 0) {
@@ -50,36 +77,43 @@ ULONG STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Release(){
     return newRef;
 }
 
-HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Notify(BMDSwitcherMixEffectBlockEventType eventType){
-    if(eventType == bmdSwitcherMixEffectBlockEventTypeProgramInputChanged){
-        while(parentManager->m_inputIterator->Next(&parentManager->m_input) == S_OK){
-            if(parentManager->m_input->ista)
-        }
-        std::cout << "Program input changed" << std::endl;
-    }
-    return S_OK;
+std::string AtemConnectionManager::getLongName(IBMDSwitcherInput *input){
+    CFStringRef longName;
+    input->GetLongName(&longName);
+    char nameBuffer[256];
+    CFStringGetCString(longName, nameBuffer, sizeof(nameBuffer), kCFStringEncodingUTF8);
+    CFRelease(longName);
+    return nameBuffer;
 }
 
-void AtemConnectionManager::AtemInputCallback::logProgramInput(){
-    parentManager->m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&parentManager->m_inputIterator);
-    bool *inputIsTallied = new bool;
-    
-    std::cout << "Tallied: " << std::endl;
-    while(parentManager->m_inputIterator->Next(&parentManager->m_input) == S_OK){
-        if(parentManager->m_input->IsProgramTallied(inputIsTallied) == S_OK && *inputIsTallied == true){
-            CFStringRef longName = nullptr;
-            parentManager->m_input->GetLongName(&longName);
-            char nameBuffer[256];
-            CFStringGetCString(longName, nameBuffer, sizeof(nameBuffer), kCFStringEncodingUTF8);
-            std::cout << nameBuffer << std::endl;
-            CFRelease(longName);
+HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Notify(BMDSwitcherMixEffectBlockEventType eventType){
+    if(eventType == bmdSwitcherMixEffectBlockEventTypeProgramInputChanged){
+        IBMDSwitcherInput *input = nullptr;
+        IBMDSwitcherInputIterator *inputIterator = nullptr;
+        m_parentManager->m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&inputIterator);
+        bool inputIsTallied;
+        //BMDSwitcherInputId inputId;
+        //ask brian about derefrence nullptr if inputID* = nullptr; later in code I GetInputId(inputId) and it didnt work
+        
+        while(inputIterator->Next(&input) == S_OK){
+            input->IsProgramTallied(&inputIsTallied);
+            if(inputIsTallied == true){
+                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "program");
+                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "program";
+            }
+            else{
+                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "off");
+                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "off";
+            }
         }
+        
+        std::cout << "\n\nIterate through map" << std::endl;
+        for(const auto& pair : m_parentManager->m_currentProgram){
+            std::cout << pair.first << " " << pair.second << std::endl;
+        }
+        
+        input->Release();
+        inputIterator->Release();
     }
-    std::cout << "\n";
-    //send command to lights
-    
-    parentManager->m_input->Release();
-    
-    delete(inputIsTallied);
-    
+    return S_OK;
 }

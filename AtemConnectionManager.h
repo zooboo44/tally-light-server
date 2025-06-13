@@ -1,7 +1,7 @@
 #include "BMDSwitcherAPI.h"
 #include <string>
 #include <iostream>
-#include <vector>
+#include <unordered_map>
 #include "MqttConnectionManager.h"
 
 class AtemConnectionManager{
@@ -11,9 +11,8 @@ private:
     IBMDSwitcher* m_switcher;
     IBMDSwitcherMixEffectBlock *m_mixBlock;
     MqttConnectionManager *m_mqttClient;
-    IBMDSwitcherInput *m_input = nullptr;
-    IBMDSwitcherInputIterator *m_inputIterator = nullptr;
-    std::vector<CFStringRef> m_currentProgramTally;
+    std::unordered_map<std::string, std::string> m_currentProgram;
+    std::string getLongName(IBMDSwitcherInput *);
     class AtemInputCallback : public IBMDSwitcherMixEffectBlockCallback{
     public:
         AtemInputCallback(AtemConnectionManager*);
@@ -23,7 +22,6 @@ private:
         virtual HRESULT STDMETHODCALLTYPE Notify(BMDSwitcherMixEffectBlockEventType eventType) override;
     private:
         ULONG refCount;
-        AtemConnectionManager *parentManager;
-        void logProgramInput();
+        AtemConnectionManager *m_parentManager;
     };
 };
