@@ -3,15 +3,11 @@
 AtemConnectionManager::AtemConnectionManager(const char* ipAddress, MqttConnectionManager* mqtt):m_mqttClient(mqtt){
     //connect to mqtt
     m_mqttClient->connect();
-    IBMDSwitcherDiscovery* switcherDiscovery = CreateBMDSwitcherDiscoveryInstance();
-    BMDSwitcherConnectToFailure connectionFailureReason;
-    CFStringRef ipAddressString = CFStringCreateWithCString(kCFAllocatorDefault, ipAddress, kCFStringEncodingUTF8);
     
-    if(switcherDiscovery->ConnectTo(ipAddressString, &m_switcher, &connectionFailureReason) != S_OK){
-        std::cout << "Error connecting" << std::endl;
+    //connect to Atem
+    if(atemConnect(ipAddress) != S_OK){
         exit(1);
     }
-    CFRelease(ipAddressString);
     std::cout << "Connection succeded!!!!" << std::endl;
     
     
@@ -62,6 +58,16 @@ AtemConnectionManager::AtemConnectionManager(const char* ipAddress, MqttConnecti
     inputIterator->Release();
     input->Release();
     delete(inputIsTallied);
+}
+
+HRESULT AtemConnectionManager::atemConnect(const char* ipAddress){
+    switcherDiscovery = CreateBMDSwitcherDiscoveryInstance();
+    CFStringRef ipAddressString = CFStringCreateWithCString(kCFAllocatorDefault, ipAddress, kCFStringEncodingUTF8);
+    if(switcherDiscovery->ConnectTo(ipAddressString, &m_switcher, &connectionFailureReason) != S_OK){
+        std::cout << "Error connecting" << std::endl;
+    }
+    CFRelease(ipAddressString);
+    return S_OK;
 }
 
 AtemConnectionManager::AtemInputCallback::AtemInputCallback(AtemConnectionManager* parent):m_parentManager(parent){}
