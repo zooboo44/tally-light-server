@@ -96,55 +96,29 @@ HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Notify(BMDSw
     IBMDSwitcherInput *input = nullptr;
     IBMDSwitcherInputIterator *inputIterator = nullptr;
     m_parentManager->m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&inputIterator);
-    bool inputIsTallied;
-    if(eventType == bmdSwitcherMixEffectBlockEventTypeProgramInputChanged){
-        //BMDSwitcherInputId inputId;
-        //ask brian about derefrence nullptr if inputID* = nullptr; later in code I GetInputId(inputId) and it didnt work
-        
-        while(inputIterator->Next(&input) == S_OK){
-            input->IsProgramTallied(&inputIsTallied);
-            if(inputIsTallied == true){
-                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "program");
-                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "program";
-            }
-            else{
-                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "off");
-                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "off";
-            }
-        }
-    }
+    bool programTally;
+    bool previewTally;
     
-    if(eventType == bmdSwitcherMixEffectBlockEventTypeInTransitionChanged){
+    if(eventType == bmdSwitcherMixEffectBlockEventTypeProgramInputChanged || eventType == bmdSwitcherMixEffectBlockEventTypePreviewInputChanged || eventType == bmdSwitcherMixEffectBlockEventTypeInTransitionChanged){
         while(inputIterator->Next(&input) == S_OK){
-            input->IsProgramTallied(&inputIsTallied);
-            if(inputIsTallied == true){
-                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "program");
+            input->IsProgramTallied(&programTally);
+            input->IsPreviewTallied(&previewTally);
+            if(programTally){
                 m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "program";
+                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "program");
+                continue;
             }
-            else{
-                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "off");
-                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "off";
-            }
-        }
-    }
-    
-    if(eventType == bmdSwitcherMixEffectBlockEventTypePreviewInputChanged){
-        while(inputIterator->Next(&input) == S_OK){
-            input->IsPreviewTallied(&inputIsTallied);
-            if(inputIsTallied == true){
-                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "preview");
+            if(previewTally){
                 m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "preview";
+                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "preview");
+                continue;
             }
             else{
-                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "off");
                 m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "off";
+                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "off");
+                continue;
             }
         }
-    }
-    
-    std::cout << "\n\nIterate through map" << std::endl;
-    for(const auto& pair : m_parentManager->m_currentProgram){
-        std::cout << pair.first << " " << pair.second << std::endl;
     }
     
     //input->Release();
