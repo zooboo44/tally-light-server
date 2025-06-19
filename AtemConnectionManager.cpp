@@ -24,6 +24,9 @@ AtemConnectionManager::AtemConnectionManager(const char* ipAddress, MqttConnecti
     AtemInputCallback *callback = new AtemInputCallback(this);
     m_mixBlock->AddCallback(callback);
     
+    AtemSwitcherCallback *switcherCallback = new AtemSwitcherCallback();
+    m_switcher->AddCallback(switcherCallback);
+    
     //generate map of inputIDs
     IBMDSwitcherInputIterator *inputIterator = nullptr;
     IBMDSwitcherInput *input = nullptr;
@@ -123,5 +126,35 @@ HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Notify(BMDSw
     
     //input->Release();
     inputIterator->Release();
+    return S_OK;
+}
+
+AtemConnectionManager::AtemSwitcherCallback::AtemSwitcherCallback(){}
+
+HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemSwitcherCallback::QueryInterface(REFIID iid, LPVOID *ppv){
+    if (memcmp(&iid, &IID_IBMDSwitcherMixEffectBlockCallback, sizeof(CFUUIDBytes)) == 0) {
+        *ppv = static_cast<IBMDSwitcherCallback*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+}
+
+ULONG STDMETHODCALLTYPE AtemConnectionManager::AtemSwitcherCallback::AddRef(){
+    return ++refCount;
+}
+
+ULONG STDMETHODCALLTYPE AtemConnectionManager::AtemSwitcherCallback::Release(){
+    ULONG newRef = --refCount;
+    if (newRef == 0) delete this;
+    return newRef;
+}
+
+
+HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemSwitcherCallback::Notify(BMDSwitcherEventType eventType, BMDSwitcherVideoMode coreVideoMode){
+    if(eventType == bmdSwitcherEventTypeDisconnected){
+        std::cout << "Disconnected" << std::endl;
+    }
     return S_OK;
 }
