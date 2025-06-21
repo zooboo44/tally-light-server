@@ -7,15 +7,15 @@
 class AtemConnectionManager{
 public:
     AtemConnectionManager(const char*, MqttConnectionManager*);
-    HRESULT atemConnect(const char*);
+    HRESULT atemConnect();
 private:
     IBMDSwitcher* m_switcher;
     IBMDSwitcherMixEffectBlock *m_mixBlock;
     MqttConnectionManager *m_mqttClient;
     IBMDSwitcherDiscovery* switcherDiscovery;
     BMDSwitcherConnectToFailure connectionFailureReason;
-    std::unordered_map<std::string, std::string> m_currentProgram;
     std::string getLongName(IBMDSwitcherInput *);
+    CFStringRef atemIpAddress;
     
     class AtemInputCallback : public IBMDSwitcherMixEffectBlockCallback{
     public:
@@ -31,7 +31,7 @@ private:
     
     class AtemSwitcherCallback : public IBMDSwitcherCallback{
     public:
-        AtemSwitcherCallback();
+        AtemSwitcherCallback(AtemConnectionManager*);
         HRESULT STDMETHODCALLTYPE QueryInterface (REFIID iid, LPVOID* ppv) override;
         ULONG STDMETHODCALLTYPE AddRef() override;
         ULONG STDMETHODCALLTYPE Release() override;

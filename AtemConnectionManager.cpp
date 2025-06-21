@@ -5,68 +5,37 @@ AtemConnectionManager::AtemConnectionManager(const char* ipAddress, MqttConnecti
     m_mqttClient->connect();
     
     //connect to Atem
-    if(atemConnect(ipAddress) != S_OK){
+    atemIpAddress = CFStringCreateWithCString(kCFAllocatorDefault, ipAddress, kCFStringEncodingUTF8);
+    if(atemConnect() != S_OK){
+        std::cerr << "Failed to connect to Atem" << std::endl;
         exit(1);
     }
-    std::cout << "Connection succeded!!!!" << std::endl;
     
-    
+    //clean up
+    CFRelease(atemIpAddress);
+}
+
+HRESULT AtemConnectionManager::atemConnect(){
+    switcherDiscovery = CreateBMDSwitcherDiscoveryInstance();
+    if(switcherDiscovery->ConnectTo(atemIpAddress, &m_switcher, &connectionFailureReason) != S_OK){
+        std::cout << "Error connecting" << std::endl;
+        return S_FALSE;
+    }
     //connect to atem
     IBMDSwitcherMixEffectBlockIterator *mixEffectIterator = nullptr;
     m_switcher->CreateIterator(IID_IBMDSwitcherMixEffectBlockIterator, (void**)&mixEffectIterator);
     mixEffectIterator->Next(&m_mixBlock);
     
-    //create callback
+    //create callbacks
     AtemInputCallback *callback = new AtemInputCallback(this);
     m_mixBlock->AddCallback(callback);
     
-    AtemSwitcherCallback *switcherCallback = new AtemSwitcherCallback();
+    AtemSwitcherCallback *switcherCallback = new AtemSwitcherCallback(this);
     m_switcher->AddCallback(switcherCallback);
     
-    //generate map of inputIDs
-    IBMDSwitcherInputIterator *inputIterator = nullptr;
-    IBMDSwitcherInput *input = nullptr;
-    m_switcher->CreateIterator(IID_IBMDSwitcherInputIterator, (void**)&inputIterator);
-    bool *inputIsTallied = new bool;
-    bool *inputIsPreviewed = new bool;
-    std::cout << "\nInitialize Map:" << std::endl;
-    while(inputIterator->Next(&input) == S_OK){
-        input->IsProgramTallied(inputIsTallied);
-        input->IsPreviewTallied(inputIsPreviewed);
-        if(*inputIsTallied){
-            std::cout << getLongName(input) << " " << "program" << std::endl;
-            m_currentProgram[getLongName(input)] = "program";
-        }
-        if(*inputIsPreviewed){
-            std::cout << getLongName(input) << " " << "preview" << std::endl;
-            m_currentProgram[getLongName(input)] = "preview";
-        }
-        else{
-            std::cout << getLongName(input) << " " << "off" << std::endl;
-            m_currentProgram[getLongName(input)] = "off";
-        }
-    }
-    
-    std::cout << "\n\n\nPrint initialized map:\n";
-    for(const auto& pair : m_currentProgram){
-        std::cout << pair.first << " " << pair.second << std::endl;
-    }
-    
     //clean up
-    switcherDiscovery->Release();
     mixEffectIterator->Release();
-    inputIterator->Release();
-    input->Release();
-    delete(inputIsTallied);
-}
-
-HRESULT AtemConnectionManager::atemConnect(const char* ipAddress){
-    switcherDiscovery = CreateBMDSwitcherDiscoveryInstance();
-    CFStringRef ipAddressString = CFStringCreateWithCString(kCFAllocatorDefault, ipAddress, kCFStringEncodingUTF8);
-    if(switcherDiscovery->ConnectTo(ipAddressString, &m_switcher, &connectionFailureReason) != S_OK){
-        std::cout << "Error connecting" << std::endl;
-    }
-    CFRelease(ipAddressString);
+    switcherDiscovery->Release();
     return S_OK;
 }
 
@@ -112,19 +81,17 @@ HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Notify(BMDSw
         while(inputIterator->Next(&input) == S_OK){
             input->IsProgramTallied(&programTally);
             input->IsPreviewTallied(&previewTally);
+            std::string currentInputName = m_parentManager->getLongName(input);
             if(programTally){
-                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "program";
-                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "program");
+                m_parentManager->m_mqttClient->publish(currentInputName, "program");
                 continue;
             }
             if(previewTally){
-                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "preview";
-                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "preview");
+                m_parentManager->m_mqttClient->publish(currentInputName, "preview");
                 continue;
             }
             else{
-                m_parentManager->m_currentProgram[m_parentManager->getLongName(input)] = "off";
-                m_parentManager->m_mqttClient->publish(m_parentManager->getLongName(input), "off");
+                m_parentManager->m_mqttClient->publish(currentInputName, "off");
                 continue;
             }
         }
@@ -135,7 +102,7 @@ HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemInputCallback::Notify(BMDSw
     return S_OK;
 }
 
-AtemConnectionManager::AtemSwitcherCallback::AtemSwitcherCallback(){}
+AtemConnectionManager::AtemSwitcherCallback::AtemSwitcherCallback(AtemConnectionManager* parent):m_parentManager(parent){}
 
 HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemSwitcherCallback::QueryInterface(REFIID iid, LPVOID *ppv){
     if (memcmp(&iid, &IID_IBMDSwitcherMixEffectBlockCallback, sizeof(CFUUIDBytes)) == 0) {
@@ -160,7 +127,17 @@ ULONG STDMETHODCALLTYPE AtemConnectionManager::AtemSwitcherCallback::Release(){
 
 HRESULT STDMETHODCALLTYPE AtemConnectionManager::AtemSwitcherCallback::Notify(BMDSwitcherEventType eventType, BMDSwitcherVideoMode coreVideoMode){
     if(eventType == bmdSwitcherEventTypeDisconnected){
-        std::cout << "Disconnected" << std::endl;
+        m_parentManager->m_switcher = nullptr;
+        int maxAttempts = 5;
+        int currentAttempt = 0;
+        std::cerr << "Disconnected" << std::endl;
+        std::cerr << "Attempting to reconnect" << std::endl;
+        for(; currentAttempt < maxAttempts; currentAttempt++){
+            if(m_parentManager->atemConnect() == S_OK){
+                std::cout << "Reconnected!" << std::endl;
+                break;
+            }
+        }
     }
     return S_OK;
 }
